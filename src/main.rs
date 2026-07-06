@@ -137,6 +137,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             );
         }
     }
-    trigger_jellyfin_scan(&client);
+    trigger_jellyfin_scan(&client).await?;
     Ok(())
 }
