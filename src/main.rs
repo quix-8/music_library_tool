@@ -1,10 +1,14 @@
+use lofty::file::AudioFile;
 use lofty::file::TaggedFileExt;
 use lofty::read_from_path;
 use lofty::tag::Accessor;
+use reqwest::Client;
+use std::error::Error;
 use std::path::PathBuf;
 use walkdir::WalkDir;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut data: Vec<PathBuf> = Vec::new();
     for entry in WalkDir::new(".") {
         match entry {
@@ -12,12 +16,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(err) => eprintln!("Пропущено из-за ошибки: {}", err), // Логируем ошибку, но программа продолжает работать
         }
     }
-    let mut apis: Vec<(String, String, String)> = Vec::new();
+    let mut apis: Vec<(String, String, String, u64)> = Vec::new();
     for path in data {
         let file = match read_from_path(&path) {
             Ok(f) => f,
             Err(_) => continue,
         };
+        let duration = file.properties().duration();
+        let duration_secs = duration.as_secs();
         let mut tl = String::new();
         let mut art = String::new();
         let mut alb = String::new();
@@ -37,7 +43,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             //     let dur = duration;
             // }
         }
-        apis.push((String::from(tl), String::from(art), String::from(alb)));
+        apis.push((
+            String::from(tl),
+            String::from(art),
+            String::from(alb),
+            duration_secs,
+        ));
+    }
+    for tag in apis {
+        let client = Client::new();
+        let url = "https://lrclib.net/api/get";
+        let params = [
+            ("track_name", tag.0),
+            ("artist_name", tag.1),
+            ("album_name", tag.2),
+            ("duration", tag.3.to_string()), // Передаем число как строку
+        ];
+        let response = client
+            .get(url)
+            .query(&params) // reqwest сам соберет ?track_name=...&artist_name=...
+            .send()
+            .await?;
     }
     Ok(())
 }
