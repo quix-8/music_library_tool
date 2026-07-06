@@ -1,12 +1,11 @@
 [package]
 name = "music_tool"
-version = "0.1.0"
-edition = "2024"
+version = "0.1.2"
+edition = "2026"
 
 [dependencies]
-# Парсинг файлов
 walkdir = "2.5"
-lofty = "0.24" # Проверь актуальную версию на crates.io
+lofty = "0.24"
 
 # Сеть и асинхронность
 tokio = { version = "1", features = ["full"] }
@@ -18,4 +17,4 @@ serde_json = "1.0"
 
 # Утилиты
 anyhow = "1.0"
-indicatif = "0.17" # Для красивого прогресс-бара
+indicatif = "0.17"

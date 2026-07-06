@@ -22,6 +22,26 @@ struct Track {
     synced_lyrics: Option<String>,
 }
 
+// Вызывать после завершения основного цикла скачивания
+async fn trigger_jellyfin_scan(client: &Client) -> Result<(), reqwest::Error> {
+    let jellyfin_url = "http://localhost:8096/Library/Refresh";
+    let api_key = "3787ea91574e4082a237df7bd0732b84";
+
+    let response = client
+        .post(jellyfin_url)
+        .header("X-Emby-Token", api_key)
+        .send()
+        .await?;
+
+    if response.status().is_success() {
+        println!("[+] Jellyfin начал сканирование библиотеки!");
+    } else {
+        eprintln!("[-] Ошибка сканирования Jellyfin: {}", response.status());
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let mut data: Vec<PathBuf> = Vec::new();
@@ -44,6 +64,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Ok(f) => f,
             Err(_) => continue,
         };
+        let lrc_path = path.with_extension("lrc");
+
+        if lrc_path.exists() {
+            println!("Пропускаем {:?}, LRC уже существует", path);
+            continue;
+        }
         let duration = file.properties().duration();
         let duration_secs = duration.as_secs();
 
@@ -111,6 +137,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             );
         }
     }
-
+    trigger_jellyfin_scan(&client);
     Ok(())
 }
