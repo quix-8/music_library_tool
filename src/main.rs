@@ -1,5 +1,6 @@
 use lofty::file::TaggedFileExt;
 use lofty::read_from_path;
+use lofty::tag::Accessor;
 use std::path::PathBuf;
 use walkdir::WalkDir;
 
@@ -11,9 +12,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(err) => eprintln!("Пропущено из-за ошибки: {}", err), // Логируем ошибку, но программа продолжает работать
         }
     }
+    let mut apis: Vec<(String, String, String)> = Vec::new();
     for path in data {
-        let file = read_from_path(path)?;
-        let id3v2 = file.primary_tag();
+        let file = match read_from_path(&path) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+        let mut tl = String::new();
+        let mut art = String::new();
+        let mut alb = String::new();
+        if let Some(tag) = file.primary_tag() {
+            println!("Файл: {:?}", path);
+
+            if let Some(title) = tag.title() {
+                tl = title.into_owned();
+            }
+            if let Some(artist) = tag.artist() {
+                art = artist.into_owned();
+            }
+            if let Some(album) = tag.album() {
+                alb = album.into_owned();
+            }
+            // if let Some(duration) = tag.duration() {
+            //     let dur = duration;
+            // }
+        }
+        apis.push((String::from(tl), String::from(art), String::from(alb)));
     }
     Ok(())
 }
