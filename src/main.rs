@@ -3,9 +3,24 @@ use lofty::file::TaggedFileExt;
 use lofty::read_from_path;
 use lofty::tag::Accessor;
 use reqwest::Client;
+use serde::Deserialize;
 use std::error::Error;
 use std::path::PathBuf;
 use walkdir::WalkDir;
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct Track {
+    id: i32,
+    track_name: String,
+    artist_name: String,
+    album_name: String,
+    duration: f64, // В API lrclib продолжительность часто приходит как дробное число
+    instrumental: bool,
+    // Оборачиваем в Option, так как текстов может не быть (придет null)
+    plain_lyrics: Option<String>,
+    synced_lyrics: Option<String>,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -64,6 +79,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .query(&params) // reqwest сам соберет ?track_name=...&artist_name=...
             .send()
             .await?;
+        if response.status().is_success() {
+            // 4. ВОТ ОНО: Парсим тело ответа в нашу структуру Track
+            let track_info = response.json::<Track>().await?;
+
+            println!("Успешно спарсили трек: {}", track_info.track_name);
+            if let Some(lyrics) = track_info.synced_lyrics {
+                println!("Нашли текст! Длина: {} символов", lyrics.len());
+            } else {
+                println!("Текста нет :(");
+            }
+        } else {
+            // Если трек не найден (например, 404), сервер вернет ошибку,
+            // json::<Track>() бы тут упал, поэтому мы проверяем статус.
+            println!("Ошибка запроса статус {}", response.status());
+        }
     }
     Ok(())
 }
