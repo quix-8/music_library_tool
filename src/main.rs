@@ -118,15 +118,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
         if response.status().is_success() {
             let track_info = response.json::<Track>().await?;
 
-            if let Some(lyrics) = track_info.synced_lyrics {
+            let (lyrics_to_save, is_synced) = if let Some(synced) = track_info.synced_lyrics {
+                (Some(synced), true)
+            } else if let Some(plain) = track_info.plain_lyrics {
+                (Some(plain), false)
+            } else {
+                (None, false)
+            };
+
+            if let Some(text) = lyrics_to_save {
                 let lrc_path = original_path.with_extension("lrc");
 
-                match fs::write(&lrc_path, lyrics).await {
-                    Ok(_) => println!("[+] Сохранен LRC для: {} - {}", artist_name, track_name),
+                match fs::write(&lrc_path, text).await {
+                    Ok(_) => {
+                        let tag = if is_synced { "[+ SYNC]" } else { "[+ PLAIN]" };
+                        println!("{} Сохранен LRC для: {} - {}", tag, artist_name, track_name);
+                    }
                     Err(e) => eprintln!("[-] Ошибка при записи {:?}: {}", lrc_path, e),
                 }
             } else {
-                println!("[!] Текста нет: {} - {}", artist_name, track_name);
+                println!("[!] Текста вообще нет: {} - {}", artist_name, track_name);
             }
         } else {
             println!(
