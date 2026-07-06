@@ -6,6 +6,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use std::error::Error;
 use std::path::PathBuf;
+use tokio::fs;
 use walkdir::WalkDir;
 
 #[derive(Deserialize, Debug)]
@@ -15,23 +16,29 @@ struct Track {
     track_name: String,
     artist_name: String,
     album_name: String,
-    duration: f64, // В API lrclib продолжительность часто приходит как дробное число
+    duration: f64,
     instrumental: bool,
-    // Оборачиваем в Option, так как текстов может не быть (придет null)
     plain_lyrics: Option<String>,
     synced_lyrics: Option<String>,
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn Error>> {
     let mut data: Vec<PathBuf> = Vec::new();
     for entry in WalkDir::new(".") {
         match entry {
-            Ok(e) => data.push(e.into_path()),
-            Err(err) => eprintln!("Пропущено из-за ошибки: {}", err), // Логируем ошибку, но программа продолжает работать
+            Ok(e) => {
+                let path = e.into_path();
+                if path.is_file() {
+                    data.push(path);
+                }
+            }
+            Err(err) => eprintln!("Пропущено из-за ошибки: {}", err),
         }
     }
-    let mut apis: Vec<(String, String, String, u64)> = Vec::new();
+
+    let mut apis: Vec<(PathBuf, String, String, String, u64)> = Vec::new();
+
     for path in data {
         let file = match read_from_path(&path) {
             Ok(f) => f,
@@ -39,12 +46,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         let duration = file.properties().duration();
         let duration_secs = duration.as_secs();
+
         let mut tl = String::new();
         let mut art = String::new();
         let mut alb = String::new();
-        if let Some(tag) = file.primary_tag() {
-            println!("Файл: {:?}", path);
 
+        if let Some(tag) = file.primary_tag() {
             if let Some(title) = tag.title() {
                 tl = title.into_owned();
             }
@@ -54,46 +61,56 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(album) = tag.album() {
                 alb = album.into_owned();
             }
-            // if let Some(duration) = tag.duration() {
-            //     let dur = duration;
-            // }
         }
-        apis.push((
-            String::from(tl),
-            String::from(art),
-            String::from(alb),
-            duration_secs,
-        ));
+
+        if tl.is_empty() || art.is_empty() {
+            continue;
+        }
+
+        apis.push((path, tl, art, alb, duration_secs));
     }
+
+    let client = Client::new();
+    let url = "https://lrclib.net/api/get";
+
     for tag in apis {
-        let client = Client::new();
-        let url = "https://lrclib.net/api/get";
+        let original_path = tag.0;
+        let track_name = tag.1;
+        let artist_name = tag.2;
+        let album_name = tag.3;
+        let duration_str = tag.4.to_string();
+
         let params = [
-            ("track_name", tag.0),
-            ("artist_name", tag.1),
-            ("album_name", tag.2),
-            ("duration", tag.3.to_string()), // Передаем число как строку
+            ("track_name", &track_name),
+            ("artist_name", &artist_name),
+            ("album_name", &album_name),
+            ("duration", &duration_str),
         ];
-        let response = client
-            .get(url)
-            .query(&params) // reqwest сам соберет ?track_name=...&artist_name=...
-            .send()
-            .await?;
+
+        let response = client.get(url).query(&params).send().await?;
+
         if response.status().is_success() {
-            // 4. ВОТ ОНО: Парсим тело ответа в нашу структуру Track
             let track_info = response.json::<Track>().await?;
 
-            println!("Успешно спарсили трек: {}", track_info.track_name);
             if let Some(lyrics) = track_info.synced_lyrics {
-                println!("Нашли текст! Длина: {} символов", lyrics.len());
+                let lrc_path = original_path.with_extension("lrc");
+
+                match fs::write(&lrc_path, lyrics).await {
+                    Ok(_) => println!("[+] Сохранен LRC для: {} - {}", artist_name, track_name),
+                    Err(e) => eprintln!("[-] Ошибка при записи {:?}: {}", lrc_path, e),
+                }
             } else {
-                println!("Текста нет :(");
+                println!("[!] Текста нет: {} - {}", artist_name, track_name);
             }
         } else {
-            // Если трек не найден (например, 404), сервер вернет ошибку,
-            // json::<Track>() бы тут упал, поэтому мы проверяем статус.
-            println!("Ошибка запроса статус {}", response.status());
+            println!(
+                "[-] Ошибка {} для: {} - {}",
+                response.status(),
+                artist_name,
+                track_name
+            );
         }
     }
+
     Ok(())
 }
