@@ -1,3 +1,4 @@
+use clap::Parser;
 use lofty::file::AudioFile;
 use lofty::file::TaggedFileExt;
 use lofty::read_from_path;
@@ -8,6 +9,16 @@ use std::error::Error;
 use std::path::PathBuf;
 use tokio::fs;
 use walkdir::WalkDir;
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[arg(short, long, default_value = ".")]
+    path: PathBuf,
+
+    #[arg(long, default_value_t = false)]
+    add_cover: bool,
+}
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -44,8 +55,10 @@ async fn trigger_jellyfin_scan(client: &Client) -> Result<(), reqwest::Error> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let args = Args::parse();
+
     let mut data: Vec<PathBuf> = Vec::new();
-    for entry in WalkDir::new(".") {
+    for entry in WalkDir::new(&args.path) {
         match entry {
             Ok(e) => {
                 let path = e.into_path();
