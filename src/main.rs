@@ -8,6 +8,8 @@ use serde::Deserialize;
 use std::error::Error;
 use std::path::PathBuf;
 use tokio::fs;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 use walkdir::WalkDir;
 
 #[derive(Parser, Debug)]
@@ -31,6 +33,34 @@ struct Track {
     instrumental: bool,
     plain_lyrics: Option<String>,
     synced_lyrics: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct SearchResponse {
+    data: Vec<Album>,
+}
+
+#[derive(Deserialize, Debug)]
+struct Album {
+    cover_big: String,
+}
+
+async fn get_cover(album: String, client: &Client) -> Result<(), Box<dyn Error>> {
+    let search_url = "https://api.deezer.com/search/";
+    let params = [("q", &album)];
+    let response = client.get(search_url).query(&params).send().await?;
+    if response.status().is_success() {
+        let data = response.json::<SearchResponse>().await?;
+        if let Some(first_alb) = data.data.into_iter().next() {
+            let cover_resp = client.get(&first_alb.cover_big).send().await?;
+            if cover_resp.status().is_success() {
+                let bytes = cover_resp.bytes().await?;
+                let mut file = File::create("cover.jpg").await?;
+                file.write_all(&bytes).await?;
+            }
+        }
+    }
+    Ok(())
 }
 
 // Вызывать после завершения основного цикла скачивания
@@ -63,7 +93,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Ok(e) => {
                 let path = e.into_path();
                 if path.is_file() {
-                    data.push(path);
+                    let is_audio = path
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(|ext_str| {
+                            let lower = ext_str.to_lowercase();
+                            // Здесь перечисляешь форматы, которые у тебя есть в медиатеке
+                            matches!(lower.as_str(), "flac" | "mp3" | "m4a" | "ogg" | "wav")
+                        })
+                        .unwrap_or(false); // Если расширения нет (например файл "README"), вернет false
+
+                    if is_audio {
+                        data.push(path);
+                    }
                 }
             }
             Err(err) => eprintln!("Пропущено из-за ошибки: {}", err),
