@@ -204,6 +204,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     if args.add_cover {
+        let target_ext = "flac";
+        let mut res = String::new();
+        for entry in WalkDir::new(&args.path).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.is_file() && path.extension().map_or(false, |ext| ext == target_ext) {
+                res = path.to_string_lossy().into_owned();
+                break;
+            }
+        }
+        let mut alb = String::new();
+        let file = read_from_path(res)?;
+        if let Some(tag) = file.primary_tag() {
+            if let Some(album) = tag.album() {
+                alb = album.into_owned();
+            }
+        }
         get_cover(alb, &client).await?;
     }
     trigger_jellyfin_scan(&client).await?;
