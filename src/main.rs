@@ -204,69 +204,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     if args.add_cover {
-        let mut cover_data: Vec<PathBuf> = Vec::new();
-
-        for entry in WalkDir::new(&args.path) {
-            match entry {
-                Ok(e) => {
-                    let path = e.into_path();
-                    if path.is_file() {
-                        let is_cover = path
-                            .extension()
-                            .and_then(|ext| ext.to_str())
-                            .map(|ext_str| {
-                                let lower = ext_str.to_lowercase();
-                                // Здесь перечисляешь форматы, которые у тебя есть в медиатеке
-                                matches!(lower.as_str(), "png" | "jpg" | "jpeg")
-                            })
-                            .unwrap_or(false); // Если расширения нет (например файл "README"), вернет false
-
-                        if is_cover {
-                            cover_data.push(path);
-                        }
-                    }
-                }
-                Err(err) => eprintln!("Пропущено из-за ошибки: {}", err),
-            }
-        }
-        if cover_data.is_empty() {
-            let mut data: Vec<PathBuf> = Vec::new();
-            for entry in WalkDir::new(&args.path) {
-                match entry {
-                    Ok(e) => {
-                        let path = e.into_path();
-                        if path.is_file() {
-                            let is_audio = path
-                                .extension()
-                                .and_then(|ext| ext.to_str())
-                                .map(|ext_str| {
-                                    let lower = ext_str.to_lowercase();
-                                    // Здесь перечисляешь форматы, которые у тебя есть в медиатеке
-                                    matches!(lower.as_str(), "flac" | "mp3" | "m4a" | "ogg" | "wav")
-                                })
-                                .unwrap_or(false); // Если расширения нет (например файл "README"), вернет false
-
-                            if is_audio {
-                                data.push(path);
-                            }
-                        }
-                    }
-                    Err(err) => eprintln!("Пропущено из-за ошибки: {}", err),
-                }
-            }
-            let file = match read_from_path(&data[0]) {
-                Ok(f) => f,
-                Err(_) => panic!(),
-            };
-            let mut alb = String::new();
-            if let Some(tag) = file.primary_tag() {
-                if let Some(album) = tag.album() {
-                    alb = album.into_owned();
-                }
-            }
-
-            get_cover(alb, &client).await?;
-        }
+        get_cover(alb, &client).await?;
     }
     trigger_jellyfin_scan(&client).await?;
     Ok(())
