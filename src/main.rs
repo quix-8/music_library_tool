@@ -6,11 +6,8 @@ use lofty::tag::Accessor;
 use reqwest::Client;
 use serde::Deserialize;
 use std::error::Error;
-use std::path::Path;
 use std::path::PathBuf;
 use tokio::fs;
-use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
 use walkdir::WalkDir;
 
 #[derive(Parser, Debug)]
