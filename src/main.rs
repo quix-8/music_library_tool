@@ -6,6 +6,7 @@ use lofty::tag::Accessor;
 use reqwest::Client;
 use serde::Deserialize;
 use std::error::Error;
+use std::path::Path;
 use std::path::PathBuf;
 use tokio::fs;
 use tokio::fs::File;
@@ -17,9 +18,6 @@ use walkdir::WalkDir;
 struct Args {
     #[arg(short, long, default_value = ".")]
     path: PathBuf,
-
-    #[arg(long, default_value_t = false)]
-    add_cover: bool,
 }
 
 #[derive(Deserialize, Debug)]
@@ -33,34 +31,6 @@ struct Track {
     instrumental: bool,
     plain_lyrics: Option<String>,
     synced_lyrics: Option<String>,
-}
-
-#[derive(Deserialize, Debug)]
-struct SearchResponse {
-    data: Vec<Album>,
-}
-
-#[derive(Deserialize, Debug)]
-struct Album {
-    cover_big: String,
-}
-
-async fn get_cover(album: String, client: &Client) -> Result<(), Box<dyn Error>> {
-    let search_url = "https://api.deezer.com/search/";
-    let params = [("q", &album)];
-    let response = client.get(search_url).query(&params).send().await?;
-    if response.status().is_success() {
-        let data = response.json::<SearchResponse>().await?;
-        if let Some(first_alb) = data.data.into_iter().next() {
-            let cover_resp = client.get(&first_alb.cover_big).send().await?;
-            if cover_resp.status().is_success() {
-                let bytes = cover_resp.bytes().await?;
-                let mut file = File::create("cover.jpg").await?;
-                file.write_all(&bytes).await?;
-            }
-        }
-    }
-    Ok(())
 }
 
 // Вызывать после завершения основного цикла скачивания
@@ -202,25 +172,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 track_name
             );
         }
-    }
-    if args.add_cover {
-        let target_ext = "flac";
-        let mut res = String::new();
-        for entry in WalkDir::new(&args.path).into_iter().filter_map(|e| e.ok()) {
-            let path = entry.path();
-            if path.is_file() && path.extension().map_or(false, |ext| ext == target_ext) {
-                res = path.to_string_lossy().into_owned();
-                break;
-            }
-        }
-        let mut alb = String::new();
-        let file = read_from_path(res)?;
-        if let Some(tag) = file.primary_tag() {
-            if let Some(album) = tag.album() {
-                alb = album.into_owned();
-            }
-        }
-        get_cover(alb, &client).await?;
     }
     trigger_jellyfin_scan(&client).await?;
     Ok(())
