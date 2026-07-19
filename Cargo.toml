@@ -7,6 +7,7 @@ edition = "2024"
 [dependencies]
 walkdir = "2.5"
 lofty = "0.24"
+directories = "5.0"
 
 # Сеть и асинхронность
 tokio = { version = "1", features = ["full"] }

@@ -1,4 +1,5 @@
 use clap::Parser;
+use directories::ProjectDirs;
 use lofty::file::AudioFile;
 use lofty::file::TaggedFileExt;
 use lofty::read_from_path;
@@ -15,6 +16,9 @@ use walkdir::WalkDir;
 struct Args {
     #[arg(short, long, default_value = ".")]
     path: PathBuf,
+
+    #[arg(short, long, default_value_t = false)]
+    jellyfin: bool,
 }
 
 #[derive(Deserialize, Debug)]
@@ -30,21 +34,49 @@ struct Track {
     synced_lyrics: Option<String>,
 }
 
+pub fn get_api_key() -> Result<String, Box<dyn Error>> {
+    let local_path = PathBuf::from("api.txt");
+    if local_path.exists() {
+        let key = std::fs::read_to_string(local_path)?;
+        return Ok(key.trim().to_string());
+    }
+
+    if let Some(proj_dirs) = ProjectDirs::from("com", "quix", "lrc_downloader") {
+        let config_dir = proj_dirs.config_dir();
+        let global_path = config_dir.join("api.txt");
+
+        if global_path.exists() {
+            let key = std::fs::read_to_string(global_path)?;
+            return Ok(key.trim().to_string());
+        }
+    }
+
+    // Если ни один из вариантов не сработал, отдаем понятную ошибку
+    Err("API not found in api.txt and in dotfiles direcrtory".into())
+}
+
 // Вызывать после завершения основного цикла скачивания
 async fn trigger_jellyfin_scan(client: &Client) -> Result<(), reqwest::Error> {
     let jellyfin_url = "http://localhost:8096/Library/Refresh";
-    let api_key = "3787ea91574e4082a237df7bd0732b84";
+    let api_key = get_api_key();
+    match api_key {
+        Ok(key) => {
+            let response = client
+                .post(jellyfin_url)
+                .header("X-Emby-Token", key)
+                .send()
+                .await?;
 
-    let response = client
-        .post(jellyfin_url)
-        .header("X-Emby-Token", api_key)
-        .send()
-        .await?;
-
-    if response.status().is_success() {
-        println!("[+] Jellyfin начал сканирование библиотеки!");
-    } else {
-        eprintln!("[-] Ошибка сканирования Jellyfin: {}", response.status());
+            if response.status().is_success() {
+                println!("[+] Jellyfin rescan started!");
+            } else {
+                eprintln!(
+                    "[-] Failed to rescan Jellyfin library: {}",
+                    response.status()
+                );
+            }
+        }
+        Err(e) => eprintln!("error: {}", e),
     }
 
     Ok(())
@@ -65,17 +97,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         .and_then(|ext| ext.to_str())
                         .map(|ext_str| {
                             let lower = ext_str.to_lowercase();
-                            // Здесь перечисляешь форматы, которые у тебя есть в медиатеке
                             matches!(lower.as_str(), "flac" | "mp3" | "m4a" | "ogg" | "wav")
                         })
-                        .unwrap_or(false); // Если расширения нет (например файл "README"), вернет false
+                        .unwrap_or(false);
 
                     if is_audio {
                         data.push(path);
                     }
                 }
             }
-            Err(err) => eprintln!("Пропущено из-за ошибки: {}", err),
+            Err(err) => eprintln!("Ignored cause of error: {}", err),
         }
     }
 
@@ -89,7 +120,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let lrc_path = path.with_extension("lrc");
 
         if lrc_path.exists() {
-            println!("Пропускаем {:?}, LRC уже существует", path);
+            println!("Skipped {:?}, LRC already exists", path);
             continue;
         }
         let duration = file.properties().duration();
@@ -154,22 +185,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 match fs::write(&lrc_path, text).await {
                     Ok(_) => {
                         let tag = if is_synced { "[+ SYNC]" } else { "[+ PLAIN]" };
-                        println!("{} Сохранен LRC для: {} - {}", tag, artist_name, track_name);
+                        println!("{} Saved LRC for: {} - {}", tag, artist_name, track_name);
                     }
-                    Err(e) => eprintln!("[-] Ошибка при записи {:?}: {}", lrc_path, e),
+                    Err(e) => eprintln!("[-] Error while writing {:?}: {}", lrc_path, e),
                 }
             } else {
-                println!("[!] Текста вообще нет: {} - {}", artist_name, track_name);
+                println!("[!] No LRC for: {} - {}", artist_name, track_name);
             }
         } else {
             println!(
-                "[-] Ошибка {} для: {} - {}",
+                "[-] Error {} for: {} - {}",
                 response.status(),
                 artist_name,
                 track_name
             );
         }
     }
-    trigger_jellyfin_scan(&client).await?;
+    if args.jellyfin {
+        trigger_jellyfin_scan(&client).await?;
+    }
     Ok(())
 }

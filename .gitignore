@@ -1,1 +1,4 @@
 /target
+flake.nix
+.direnv
+.envrc
