@@ -9,6 +9,7 @@ use serde::Deserialize;
 use std::error::Error;
 use std::path::PathBuf;
 use tokio::fs;
+use tokio::time::{Duration, sleep};
 use walkdir::WalkDir;
 
 #[derive(Parser, Debug)]
@@ -19,6 +20,9 @@ struct Args {
 
     #[arg(short, long, default_value_t = false)]
     jellyfin: bool,
+
+    #[arg(short = 'u', long, default_value = "http://localhost:8096")]
+    jellyfin_url: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -56,27 +60,23 @@ pub fn get_api_key() -> Result<String, Box<dyn Error>> {
 }
 
 // Вызывать после завершения основного цикла скачивания
-async fn trigger_jellyfin_scan(client: &Client) -> Result<(), reqwest::Error> {
-    let jellyfin_url = "http://localhost:8096/Library/Refresh";
-    let api_key = get_api_key();
-    match api_key {
-        Ok(key) => {
-            let response = client
-                .post(jellyfin_url)
-                .header("X-Emby-Token", key)
-                .send()
-                .await?;
+async fn trigger_jellyfin_scan(client: &Client, base_url: &str) -> Result<(), Box<dyn Error>> {
+    let jellyfin_url = format!("{}/Library/Refresh", base_url.trim_end_matches('/'));
+    let key = get_api_key()?;
 
-            if response.status().is_success() {
-                println!("[+] Jellyfin rescan started!");
-            } else {
-                eprintln!(
-                    "[-] Failed to rescan Jellyfin library: {}",
-                    response.status()
-                );
-            }
-        }
-        Err(e) => eprintln!("error: {}", e),
+    let response = client
+        .post(&jellyfin_url)
+        .header("X-Emby-Token", key)
+        .send()
+        .await?;
+
+    if response.status().is_success() {
+        println!("[+] Jellyfin rescan started!");
+    } else {
+        eprintln!(
+            "[-] Failed to rescan Jellyfin library: {}",
+            response.status()
+        );
     }
 
     Ok(())
@@ -200,9 +200,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 track_name
             );
         }
+        sleep(Duration::from_millis(150)).await;
     }
     if args.jellyfin {
-        trigger_jellyfin_scan(&client).await?;
+        if let Err(e) = trigger_jellyfin_scan(&client, &args.jellyfin_url).await {
+            eprintln!("[-] Jellyfin scan failed: {}", e);
+        }
     }
     Ok(())
 }
