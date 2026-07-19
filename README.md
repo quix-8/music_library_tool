@@ -31,6 +31,8 @@ If you have Rust installed via `rustup` or your system package manager:
 1. Clone the repository and navigate into the project directory.
 2. Build the project in release mode for optimal performance:
 ```bash
+git clone https://github.com/quix-8/lrc_downloader.git
+cd lrc_downloader
 cargo build --release
 ```
 
@@ -48,7 +50,7 @@ Bash
 ./target/release/lrc_downloader --path /path/to/music --jellyfin
 
 # Scan and trigger Jellyfin update on a custom URL
-./target/release/lrc_downloader --path /path/to/music -j --jellyfin-url "[http://192.168.1.100:8096](http://192.168.1.100:8096)"
+./target/release/lrc_downloader --path /path/to/music -j --jellyfin-url "http://192.168.1.100:8096"
 ```
 
 ### CLI Options
@@ -62,3 +64,7 @@ Bash
 - `-h, --help` : Print help information
     
 - `-V, --version` : Print version information
+
+---
+
+AI generated README
